@@ -1,0 +1,7 @@
+// apiKey: Your Telegram bot's API key
+// maxLength: The maximum length of a generated phrase, in case of infinite loop
+
+{
+  "apiKey": "YOUR API KEY HERE",
+  "maxLength": 1000
+}
