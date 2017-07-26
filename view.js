@@ -50,14 +50,29 @@ const train = function(text) {
 }
 const generate = function() {
   const generated = chain.generate(config.maxLength)
-  return generated.join(" ")
+  const generatedText = generated.join(" ")
+  return generatedText
 }
 // Log
-const log = function(message) {
+const log = function(tier, message) {
   logText.val(logText.val() +
-    "[Log] " + message + "\n")
+    "[" + tier + "] " + message + "\n")
+}
+// Log errors
+window.onerror = function(msg, url, line, col, error) {
+  log("Error", msg + " (Line " + line + ", column " + col + ")")
 }
 // Start bot
-bot.command("/generate", (ctx) => ctx.reply("Hey there!!"))
+bot.command("generate", (ctx) => {
+  const generated = generate()
+  if (generated == "") ctx.reply("(Sorry, I don't have any data yet.)")
+  else ctx.reply(generated)
+})
+bot.on("message", (ctx) => {
+  if (ctx.message.text != undefined) {
+    train(ctx.message.text)
+    log("Chat", ctx.chat.id + ": " + ctx.message.text)
+  }
+})
 bot.startPolling()
-log("Bot started.")
+log("Status", "Bot started.")
