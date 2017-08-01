@@ -1,4 +1,5 @@
-// Imports
+"use strict"
+
 const $ = require("jquery")
 const telegraf = require("telegraf")
 const randomItemInArray = require("random-item-in-array")
@@ -6,30 +7,101 @@ const isEmpty = require("is-empty")
 const loadJsonFile = require("load-json-file")
 const whitespaceSplit = require("whitespace-split")
 const lowerCase = require("lower-case")
-// Config
-const config = loadJsonFile.sync("config.json")
-// Bot
-const bot = new telegraf(config.apiKey)
-// UI Elements
-const logText = $("#log");
-// Markov chain
-const chain = {
-  chain: {},
-  train: function(items) {
+
+class Main {
+  constructor() {
+    this.config = loadJsonFile.sync("config.json")
+    this.log = new Log("#log")
+    this.bot = new telegraf(this.config.apiKey)
+    this.chats = new Chats()
+  }
+
+  start() {
+    this.bot.command("generate", (ctx) => {
+      const chatId = ctx.chat.id
+      const generated = this.chats.getChat(chatId).wordChain.generate(this.config.maxLength)
+      this.log.log("Generate", chatId + ": " + generated)
+      if (generated == "") ctx.reply("(Sorry, I don't have any data yet.)")
+      else ctx.reply(generated)
+    })
+    this.bot.on("message", (ctx) => {
+      const chatId = ctx.chat.id
+      const message = ctx.message.text
+      if (message != undefined) {
+        this.chats.getChat(chatId).wordChain.train(message)
+        this.log.log("Chat", chatId + ": " + message)
+      }
+    })
+    this.bot.startPolling()
+    this.log.log("Status", "Bot started.")
+  }
+
+  enableLogging() {
+    window.onerror = function(msg, url, line, col, error) {
+      this.log.log("Error", msg + " (Line " + line + ", column " + col + ")")
+    }
+  }
+}
+
+class Chats {
+  constructor() {
+    this.chats = {}
+  }
+
+  getChat(chatId) {
+    if (this.chats[chatId] == undefined) this.chats[chatId] = new Chat()
+    return this.chats[chatId]
+  }
+}
+
+class Chat {
+  constructor() {
+    this.wordChain = new WordChain()
+  }
+}
+
+class WordChain {
+  constructor() {
+    this.chain = new Chain()
+  }
+
+  train(text) {
+    const textSplit = whitespaceSplit(this.normalize(text))
+    this.chain.train(textSplit)
+  }
+
+  generate(maxLength) {
+    const generated = this.chain.generate(maxLength)
+    const generatedText = generated.join(" ")
+    return generatedText
+  }
+
+  normalize(text) {
+    return lowerCase(text)
+  }
+}
+
+class Chain {
+  constructor() {
+    this.data = {}
+  }
+
+  train(items) {
     let prevItem = null
     for (let i = 0; i < items.length; i++) {
       const item = items[i]
       // Add this item to prev item's array
-      if (this.chain[prevItem] == undefined) this.chain[prevItem] = []
-      this.chain[prevItem].push(item)
+      if (this.data[prevItem] == undefined) this.data[prevItem] = []
+      this.data[prevItem].push(item)
       prevItem = item
     }
-  },
-  generate: function(maxLength) {
+  }
+
+  generate(maxLength) {
     const items = []
     let prevItem = null
     while (items.length < maxLength) {
-      const possibleThisItems = this.chain[prevItem]
+      const possibleThisItems = this.data[prevItem]
       // Stop if dead end
       if (isEmpty(possibleThisItems)) break
       // Choose current item from the possible items and push to result
@@ -40,39 +112,17 @@ const chain = {
     return items
   }
 }
-// Words
-const normalize = function(text) {
-  return lowerCase(text)
-}
-const train = function(text) {
-  const textSplit = whitespaceSplit(normalize(text))
-  chain.train(textSplit)
-}
-const generate = function() {
-  const generated = chain.generate(config.maxLength)
-  const generatedText = generated.join(" ")
-  return generatedText
-}
-// Log
-const log = function(tier, message) {
-  logText.val(logText.val() +
-    "[" + tier + "] " + message + "\n")
-}
-// Log errors
-window.onerror = function(msg, url, line, col, error) {
-  log("Error", msg + " (Line " + line + ", column " + col + ")")
-}
-// Start bot
-bot.command("generate", (ctx) => {
-  const generated = generate()
-  if (generated == "") ctx.reply("(Sorry, I don't have any data yet.)")
-  else ctx.reply(generated)
-})
-bot.on("message", (ctx) => {
-  if (ctx.message.text != undefined) {
-    train(ctx.message.text)
-    log("Chat", ctx.chat.id + ": " + ctx.message.text)
+
+class Log {
+  constructor(identifier) {
+    this.logText = $(identifier)
   }
-})
-bot.startPolling()
-log("Status", "Bot started.")
+
+  log(tier, message) {
+    this.logText.val(this.logText.val() +
+      "[" + tier + "] " + message + "\n")
+  }
+}
+
+// Start program
+new Main().start()
