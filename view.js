@@ -1,7 +1,7 @@
 "use strict"
 
 const $ = require("jquery")
-const telegraf = require("telegraf")
+const Telegraf = require("telegraf")
 const randomItemInArray = require("random-item-in-array")
 const isEmpty = require("is-empty")
 const loadJsonFile = require("load-json-file")
@@ -11,35 +11,74 @@ const lowerCase = require("lower-case")
 class Main {
   constructor() {
     this.config = loadJsonFile.sync("config.json")
-    this.log = new Log("#log")
-    this.bot = new telegraf(this.config.apiKey)
-    this.chats = new Chats()
+    this.errorLogger = new ErrorLogger()
+    this.bot = new Bot(this.config.apiKey, this.config.maxLength)
   }
 
   start() {
-    this.bot.command("generate", (ctx) => {
-      const chatId = ctx.chat.id
-      const generated = this.chats.getChat(chatId).wordChain.generate(this.config.maxLength)
-      this.log.log("Generate", chatId + ": " + generated)
-      if (generated == "") ctx.reply("(Sorry, I don't have any data yet.)")
-      else ctx.reply(generated)
-    })
-    this.bot.on("message", (ctx) => {
-      const chatId = ctx.chat.id
-      const message = ctx.message.text
-      if (message != undefined) {
-        this.chats.getChat(chatId).wordChain.train(message)
-        this.log.log("Chat", chatId + ": " + message)
-      }
-    })
-    this.bot.startPolling()
-    this.log.log("Status", "Bot started.")
+    this.errorLogger.start()
+    this.bot.start()
+  }
+}
+
+class Bot {
+  constructor(apiKey, maxLength) {
+    this.bot = new Telegraf(apiKey)
+    this.chats = new Chats()
+    this.maxLength = maxLength
+    this.chatLog = new Log("Chat")
+    this.generateLog = new Log("Generate")
+    this.statusLog = new Log("Status")
   }
 
-  enableLogging() {
-    window.onerror = function(msg, url, line, col, error) {
-      this.log.log("Error", msg + " (Line " + line + ", column " + col + ")")
+  start() {
+    this.bot.command("generate", this.generate.bind(this))
+    this.bot.on("message", this.train.bind(this))
+    this.bot.startPolling()
+    this.statusLog.log("Bot started.")
+  }
+
+  generate(ctx) {
+    const chatId = ctx.chat.id
+    const generated = this.chats.getChat(chatId).wordChain.generate(this.maxLength)
+    this.generateLog.log(chatId + ": " + generated)
+    if (generated == "") ctx.reply("(Sorry, I don't have any data yet.)")
+    else ctx.reply(generated)
+  }
+
+  train(ctx) {
+    const chatId = ctx.chat.id
+    const message = ctx.message.text
+    if (message != undefined) {
+      this.chats.getChat(chatId).wordChain.train(message)
+      this.chatLog.log(chatId + ": " + message)
     }
+  }
+}
+
+class ErrorLogger {
+  constructor() {
+    this.log = new Log("Error")
+  }
+
+  start() {
+    window.onerror = this.onError.bind(this)
+  }
+
+  onError(msg, url, line, col, error) {
+   this.log.log(msg + " (Line " + line + ", column " + col + ")")
+  }
+}
+
+class Log {
+  constructor(identifier) {
+    this.ui = $("#log")
+    this.identifier = identifier
+  }
+
+  log(message) {
+    this.ui.val(this.ui.val() +
+      "[" + this.identifier + "] " + message + "\n")
   }
 }
 
@@ -113,16 +152,6 @@ class Chain {
   }
 }
 
-class Log {
-  constructor(identifier) {
-    this.logText = $(identifier)
-  }
-
-  log(tier, message) {
-    this.logText.val(this.logText.val() +
-      "[" + tier + "] " + message + "\n")
-  }
-}
-
 // Start program
-new Main().start()
+let main = new Main()
+main.start()
